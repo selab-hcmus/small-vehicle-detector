@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # --------------------------------------------------------
 # Tensorflow Faster R-CNN
 # Licensed under The MIT License [see LICENSE for details]
@@ -30,189 +28,201 @@ import argparse
 from nets.vgg16 import vgg16
 from nets.resnet_v1 import resnetv1
 
-CLASSES = ('__background__',  # always index 0
+CLASSES_1 = ('__background__',  # always index 0
                      'dog', 'person', 'cat', 
                      'tv', 'car', 'meatballs', 
                      'marinara sauce', 'tomato soup', 'chicken noodle soup',
                      'french onion soup', 'chicken breast', 'ribs', 
                      'pulled pork', 'hamburger', 'cavity')
-
-# CLASSES = ('__background__', 'car')
+CLASSES_2 = ('__background__', 'car')
 
 NETS = {
-    'vgg16': ('vgg16_faster_rcnn_iter_70000.ckpt',),
     'res101': ('res101_faster_rcnn_iter_10000.ckpt',),}
-DATASETS= {'pascal_voc': ('voc_2007_trainval',),
-'pascal_voc_0712': ('voc_2007_trainval+voc_2012_trainval',),
-'car_track1': ('car_track1_train',),
-'tiny_car_track1':('tiny_car_track1_train',),
-'horizontal_car_track1': ('horizontal_car_track1_train',)}
 
-def vis_detections(im, class_name, dets, info, idx, thresh=0.5):
+DATASETS= {
+    'car_track1': ('car_track1_train',),
+    'tiny_car_track1':('tiny_car_track1_train',),
+    'horizontal_car_track1': ('horizontal_car_track1_train',)}
 
+VIDEO_PATH = 'data/video/demo.mp4'
+OUTPUT_DIR = 'output_bbox'
+
+def store_bbox(im, class_name, dets, info, idx, thresh=0.5):
     inds = np.where(dets[:, -1] >= thresh)[0]
     if len(inds) == 0:
-      return
+        return
 
     for i in inds:
-      #bbox = dets[i, :4]
-      #score = dets[i, -1]
+        bbox = dets[i, :4]
+        score = dets[i, -1]
 
-      info.append(np.append(dets[i], idx))
+        info.append(np.append(dets[i], idx))
 
-      #cv2.rectangle(im, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255, 0, 0), 2)
-      # cv2.putText(im, class_name, (bbox[0], bbox[1]), font, 0.5, (0, 255, 0), 2, cv2.LINE_AA)
-
-def demo(sess, net, image_name):
-    """Detect object classes in an image using pre-computed object proposals."""
-
-    # Load the demo image
-    im_file = os.path.join(cfg.DATA_DIR, 'demo', image_name)
-    im = cv2.imread(im_file)
-
-    # Detect all object classes and regress object bounds
-    timer = Timer()
-    timer.tic()
+def extract_bbox(sess, net, im, idx, info, CLASSES):
     scores, boxes = im_detect(sess, net, im)
-    timer.toc()
-    print('Detection took {:.3f}s for {:d} object proposals'.format(timer.total_time, boxes.shape[0]))
-
-    # Visualize detections for each class
     CONF_THRESH = 0.8
     NMS_THRESH = 0.3
+
     for cls_ind, cls in enumerate(CLASSES[1:]):
-      cls_ind += 1 # because we skipped background
-      cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
-      cls_scores = scores[:, cls_ind]
-      dets = np.hstack((cls_boxes,
-                        cls_scores[:, np.newaxis])).astype(np.float32)
-      keep = nms(dets, NMS_THRESH)
-      dets = dets[keep, :]
-      vis_detections(im, cls, dets, thresh=CONF_THRESH)
+        cls_ind += 1 # because we skipped background
+        cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
+        cls_scores = scores[:, cls_ind]
+        dets = np.hstack((cls_boxes,
+            cls_scores[:, np.newaxis])).astype(np.float32)
 
-def my_demo(sess, net, im, video_name, idx, info):
-  scores, boxes = im_detect(sess, net, im)
-  CONF_THRESH = 0.8
-  NMS_THRESH = 0.3
-  for cls_ind, cls in enumerate(CLASSES[1:]):
-    cls_ind += 1 # because we skipped background
-    cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
-    cls_scores = scores[:, cls_ind]
-    dets = np.hstack((cls_boxes,
-                          cls_scores[:, np.newaxis])).astype(np.float32)
-    keep = nms(dets, NMS_THRESH)
-    dets = dets[keep, :]
-    vis_detections(im, cls, dets, info, idx, thresh=CONF_THRESH)
+        keep = nms(dets, NMS_THRESH)
+        dets = dets[keep, :]
 
-    # cv2.imwrite(os.path.join(video_name, str(idx).zfill(5) + '.jpeg'), im)    
+        store_bbox(im, cls, dets, info, idx, thresh=CONF_THRESH)
 
-    # vis_detections(im, cls, dets, thresh=CONF_THRESH)    
-    # cv2.imshow('img', vis_detections(im, cls, dets, thresh=CONF_THRESH))
-    # cv2.waitKey(0)
+def overlap(anchor, other):
+    dx = min(anchor[2], other[2]) - max(anchor[0], other[0])
+    dy = min(anchor[3], other[3]) - max(anchor[1], other[1])
+    area = 0.0
+    if (dx > 0) and (dy > 0):
+        area = dx * dy
+    anchor_area = (anchor[2] - anchor[0]) * (anchor[3] - anchor[1])
+    other_area = (other[2] - other[0]) * (other[3] - other[1])
+    overlap_rate = area / max(anchor_area, other_area)
+    return overlap_rate
 
-def parse_args():
-    """Parse input arguments."""
-    parser = argparse.ArgumentParser(description='Tensorflow Faster R-CNN demo')
-    parser.add_argument('--net', dest='demo_net', help='Network to use [vgg16 res101]',
-                        choices=NETS.keys(), default='res101')
-    parser.add_argument('--dataset', dest='dataset', help='Trained dataset [pascal_voc pascal_voc_0712]',
-                        choices=DATASETS.keys(), default='pascal_voc_0712')
-    args = parser.parse_args()
+def prune(info, thresh=0.6):
+    ans = []
 
-    return args
+    for idx in xrange(1, int(np.max(info[:, -1])) + 1):
+        print(idx)
+        box = info[info[:,5] == idx]
+        N = box.shape[0]
+        mark = -1.0 * np.ones((N, ))
+        count = 0
+        for i in xrange(N):
+            if (mark[i] != -1):
+                continue
+            for j in xrange(i, N):
+                rate = overlap(box[i,:4], box[j, :4])
+                if rate >= thresh:
+                    mark[j] = count
+            count = count + 1
+
+        for i in xrange(count):
+            newbox = []
+            b = box[mark == i]
+            newbox.append(np.mean(b[:,0]))
+            newbox.append(np.mean(b[:,1]))
+            newbox.append(np.mean(b[:,2]))
+            newbox.append(np.mean(b[:,3]))
+            newbox.append(np.mean(b[:,4]))
+            newbox.append(idx)
+            ans.append(newbox)
+
+    return np.array(ans)
+
+def merge_bbox(info, smal, hori):
+    smal[:,:4] = smal[:,:4] / 3
+    smal[:,0] = smal[:,0] + 480
+    smal[:,2] = smal[:,2] + 480
+    res = np.vstack([info, smal, hori])
+    return prune(res)
+
+def vis_detection(bboxes):
+    writer = cv2.VideoWriter('output_video.avi',
+                                cv2.VideoWriter_fourcc(*'XVID'),
+                                30, (1920, 1080))       
+
+    video = cv2.VideoCapture(VIDEO_PATH)
+
+    i = 0
+    while video.isOpened():
+        isReadable, frame = video.read()
+
+        if not isReadable:
+            break
+        inds = np.where(bboxes[:,-1] == (i + 1))[0]
+        for bbox in bboxes[inds]:
+            bbox = bbox.astype(np.int)
+            cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255, 0, 0), 2)
+        
+        writer.write(frame)
+
+        i += 1
+
+    video.release()
+    writer.release()
 
 if __name__ == '__main__':
+
     cfg.TEST.HAS_RPN = True  # Use RPN for proposals
-    args = parse_args()
+
+    info_list = [[],[],[]]
 
     # model path
-    demonet = args.demo_net
-    dataset = args.dataset
-    tfmodel = os.path.join('output', demonet, DATASETS[dataset][0], 'default',
-                              NETS[demonet][0])
+    demonet = 'res101'
+    datasets = ['car_track1', 'tiny_car_track1', 'horizontal_car_track1']
 
 
-    if not os.path.isfile(tfmodel + '.meta'):
-        raise IOError(('{:s} not found.\nDid you download the proper networks from '
-                       'our server and place them properly?').format(tfmodel + '.meta'))
+    for i in range(3):
+        tf.reset_default_graph()
 
-    # set config
-    tfconfig = tf.ConfigProto(allow_soft_placement=True)
-    tfconfig.gpu_options.allow_growth=True
+        if i == 0:
+            CLASSES = CLASSES_1
+        else:
+            CLASSES = CLASSES_2
 
-    # init session
-    sess = tf.Session(config=tfconfig)
-    # load network
-    if demonet == 'vgg16':
-        net = vgg16()
-    elif demonet == 'res101':
-        net = resnetv1(num_layers=101)
-    else:
-        raise NotImplementedError
-    # net.create_architecture("TEST", len(CLASSES),
-    #                       tag='default', anchor_scales=[4,8,16,32])
-    net.create_architecture("TEST", len(CLASSES),
-                          tag='default', anchor_scales=[2,4,8,16])
-    saver = tf.train.Saver()
-    saver.restore(sess, tfmodel)
+        dataset = datasets[i]
+        tfmodel = os.path.join(
+            'output', demonet, DATASETS[dataset][0], 'default', NETS[demonet][0])
 
-    print('Loaded network {:s}'.format(tfmodel))
+        if not os.path.isfile(tfmodel + '.meta'):
+            raise IOError(('{:s} not found.\nDid you download the proper networks from '
+                'our server and place them properly?').format(tfmodel + '.meta'))
 
-    # info = []
+        # set config
+        tfconfig = tf.ConfigProto(allow_soft_placement=True)
+        tfconfig.gpu_options.allow_growth=True
 
+        # init session
+        sess = tf.Session(config=tfconfig)
 
-    # image_path = '/media/ad/DATA/aicitychallenge/tf-faster-rcnn/Loc3_1/00010.jpeg'
-    # image = cv2.imread(image_path)
-    # image = cv2.resize(image, (image.shape[1] * 3, image.shape[0] * 3))
-    # my_demo(sess, net, image, 'Loc3_1', 999999, info)
+        # load network
+        if demonet == 'res101':
+            net = resnetv1(num_layers=101)
+        else:
+            raise NotImplementedError
 
-    # exit(0)
-    # video_names = os.listdir('/media/ad/DATA/aicitychallenge/tf-faster-rcnn/data/Track1')
-    # for video_name in video_names:
-    #   if (video_name[:4] in ['Loc1']):
-    #     continue
-    #   if not os.path.exists(video_name[:-4]):
-    #     os.mkdir(video_name[:-4])
+        net.create_architecture("TEST", len(CLASSES),
+            tag='default', anchor_scales=[4, 8, 16, 32])
 
-    #   video_path = os.path.join('/media/ad/DATA/aicitychallenge/tf-faster-rcnn/data/Track1', video_name)
-    #   print(video_path)
+        saver = tf.train.Saver()
+        saver.restore(sess, tfmodel)
 
-    #   info = []
-    #   video = cv2.VideoCapture(video_path)
-    #   idx = 1
-    #   while (video.isOpened()):
-    #     print(idx)
-    #     isReadable, frame = video.read()
-    #     if not isReadable:
-    #       break
-    #     frame = frame[: 540, 480: 1440,:]
-    #     sz = frame.shape
-    #     frame = cv2.resize(frame, (sz[1]* 3, sz[0] * 3))
-    #     my_demo(sess, net, frame, video_name[:-4], idx, info)
-    #     # frame = cv2.resize(frame, (sz[1], sz[0]))
-    #     idx += 1
+        print('Loaded network {:s}'.format(tfmodel))
 
-    #   np.save(os.path.join(video_name[:-4], 'info_' + video_name[:-4]), np.array(info))
-    
-    video_names = os.listdir('/media/ad/DATA/aicitychallenge/tf-faster-rcnn/data/Track1')
-    for video_name in video_names:
-      if (video_name[:4] in ['Loc1']):
-          if not os.path.exists(video_name[:-4]):
-            os.mkdir(video_name[:-4])
+        video = cv2.VideoCapture(VIDEO_PATH)
 
-          video_path = os.path.join('/media/ad/DATA/aicitychallenge/tf-faster-rcnn/data/Track1', video_name)
-          print(video_path)
-
-          info = []
-          video = cv2.VideoCapture(video_path)
-          idx = 1
-          while (video.isOpened()):
-            print(idx)
+        info = []
+        idx = 1
+        while video.isOpened():
             isReadable, frame = video.read()
+
             if not isReadable:
-              break
-            my_demo(sess, net, frame, video_name[:-4], idx, info)
-            # frame = cv2.resize(frame, (sz[1], sz[0]))
+                break
+
+            if i == 1:
+                frame = frame[: 540, 480: 1440,:]
+                sz = frame.shape
+                frame = cv2.resize(frame, (sz[1]* 3, sz[0] * 3))
+
+            extract_bbox(sess, net, frame, idx, info, CLASSES)
             idx += 1
 
-          np.save(os.path.join(video_name[:-4], 'info_' + video_name[:-4]), np.array(info))
+            print('Complete extracting bounding box on video %s at frame %i' % (VIDEO_PATH, idx), sep=' ', end='\r')
+        
+        info_list[i].append(info)
+
+    info = np.array(info_list[0][0])
+    smal = np.array(info_list[1][0])
+    hori = np.array(info_list[2][0])
+
+    res = merge_bbox(info, smal, hori)
+
+    vis_detection(res)
