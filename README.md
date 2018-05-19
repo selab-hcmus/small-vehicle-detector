@@ -55,7 +55,12 @@
 
 Request Access is required. Contact email smartenvironment@selab.hcmus.edu.vn
 
+Create mall-vehicle-detector/output/res101 folder
+
 After extracting file, copy those files to small-vehicle-detector/output/res101
 
 ## Demo
 
+```
+python tools/demo.py
+```
