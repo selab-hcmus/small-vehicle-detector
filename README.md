@@ -64,3 +64,17 @@ After extracting file, copy those files to small-vehicle-detector/output/res101
 ```
 python tools/demo.py
 ```
+## Citations
+Please consider citing this project in your publications if it helps your research:
+
+```
+@Inproceedings{nktuan-AICity2019,
+  Title          = {Vehicle Re-identification with Learned Representation and Spatial Verification and Abnormality Detection with Multi-Adaptive Vehicle Detectors for Traffic Video Analysis},
+  Author         = {Khac-Tuan Nguyen and Trung-Hieu Hoang and Minh-Triet Tran and Trung-Nghia Le and Ngoc-Minh Bui and Trong-Le Do and Viet-Khoa Vo-Ho and Quoc-An Luong and Mai-Khiem Tran and Thanh-An Nguyen and Thanh-Dat Truong and Vinh-Tiep Nguyen and Minh N. Do},
+  BookTitle      = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR) Workshops},
+  Year           = {2019},
+}
+```
+
+------------------
+The code is used for academic purpose only.
